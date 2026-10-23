@@ -66,6 +66,12 @@ project, which would show most code as not run and takes long to write. Only
 the tests that ran can run changed lines, so this is what running every test
 would report. Runs of every test, as in CI, keep pytest-cov's report.
 
+That covers the lines changed since the last recorded run. To cover a whole pull
+request, as a patch coverage check does, pass ``--blast-radius-patch-base`` with
+the branch it merges into, such as ``origin/main``: the run also includes the
+tests that ran lines changed since the merge base, and reports on every line
+changed since.
+
 Every run records the working tree as git sees it, with uncommitted and
 untracked files but not ignored ones. Files marked assume-unchanged or
 skip-worktree count as they are on disk, clean filters are bypassed, and

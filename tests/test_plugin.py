@@ -1570,6 +1570,40 @@ def test_coverage_of_changed_lines(project: Project) -> None:
     result.stdout.fnmatch_lines(["*TOTAL*"])
 
 
+def test_coverage_since_patch_base(project: Project) -> None:
+    project.commit(MATHS)
+    project.git("branch", "start")
+    cov = ("--cov=pkg", "--cov-branch", "--blast-radius")
+    project.pytester.runpytest_subprocess(*cov)
+    project.commit({"pkg/maths.py": MATHS["pkg/maths.py"].replace("a + b", "b + a")})
+    project.pytester.runpytest_subprocess(*cov).assert_outcomes(passed=1)
+    project.write({"pkg/text.py": "def shout(text):\n    return str.upper(text)\n"})
+    result = project.pytester.runpytest_subprocess(*cov)
+    result.stdout.fnmatch_lines(["blast-radius: tests cover all 1 changed lines"])
+    result.assert_outcomes(passed=1)
+    # The test that ran the line changed before the last run runs again too.
+    result = project.pytester.runpytest_subprocess(
+        *cov, "--blast-radius-patch-base", "start"
+    )
+    result.stdout.fnmatch_lines(["blast-radius: tests cover all 2 changed lines"])
+    result.assert_outcomes(passed=2)
+
+
+def test_patch_base_selects_earlier_changes(project: Project) -> None:
+    project.commit(MATHS)
+    project.git("branch", "start")
+    project.run("--blast-radius")
+    project.commit({"pkg/maths.py": MATHS["pkg/maths.py"].replace("a + b", "b + a")})
+    project.run("--blast-radius")
+    project.write({"pkg/text.py": "def shout(text):\n    return str.upper(text)\n"})
+    shout = "tests/test_text.py::test_shout"
+    assert project.ran("--blast-radius") == {shout}
+    base = ("--blast-radius", "--blast-radius-patch-base", "start")
+    assert project.ran(*base) == {shout, "tests/test_maths.py::test_add"}
+    result = project.run("--blast-radius", "--blast-radius-patch-base", "nowhere")
+    result.stderr.fnmatch_lines(["*--blast-radius-patch-base nowhere: *"])
+
+
 def test_coverage_of_changed_lines_report(project: Project) -> None:
     project.commit(
         {
