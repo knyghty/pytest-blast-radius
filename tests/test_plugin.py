@@ -1067,8 +1067,10 @@ def test_reused_failures(recorded: Project) -> None:
         ]
     )
     result.assert_outcomes(passed=1, failed=1)
-    # The reused report stays the original one.
-    assert recorded.run("--blast-radius").stdout.str().count("reused this") == 1
+    # The reused report stays the original one. On CI, pytest's short summary quotes
+    # the whole report, note included, so count only the report's own.
+    report = recorded.run("--blast-radius").stdout.str().split("short test summary")
+    assert report[0].count("reused this") == 1
     xdist = ("-p", "xdist", "-n", "2", "-o", "blast_radius_serial_below=0")
     result = recorded.pytester.runpytest_subprocess("--blast-radius", *xdist)
     result.stdout.fnmatch_lines(["*reusing 1 failures*", "*reused this failure*"])
