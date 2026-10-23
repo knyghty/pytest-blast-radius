@@ -27,7 +27,7 @@ license-files = ["LICENSE"]
 name = "pytest-blast-radius"
 readme = "README.rst"
 requires-python = ">=3.12"
-version = "0.1.0"
+version = "0.2.0"
 
 [project.entry-points.pytest11]
 blast_radius = "pytest_blast_radius.plugin"

@@ -55,6 +55,8 @@ class State:
     message: str = ""
     base: dict[str, Any] | None = None
     changes: dict[str, list[selection.Hunk] | None] = field(default_factory=dict)
+    # The changes the coverage report covers: since the patch base, if given.
+    patch_changes: dict[str, list[selection.Hunk] | None] | None = None
     affected: set[str] = field(default_factory=set)
     deselect: set[str] = field(default_factory=set)
     # Test files, relative to the repository, with nothing to collect.
@@ -110,6 +112,12 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         "--blast-radius-check",
         action="store_true",
         help="run every test and report failures --blast-radius would have skipped",
+    )
+    group.addoption(
+        "--blast-radius-patch-base",
+        metavar="REF",
+        help="with --blast-radius, also run the tests that ran lines changed since "
+        "the merge base with REF, and report coverage of every line changed since",
     )
     parser.addini(
         "blast_radius_full_run",
@@ -248,6 +256,7 @@ def _decide(config: pytest.Config, state: State) -> None:
     try:
         changes = _changes(repository, base["tree"], state.tree)
         affected, selector = _select(config, repository, base, changes)
+        affected |= _covering(config, repository, state, base, selector)
     except pytest.UsageError:
         raise
     # A bug in selection runs every test rather than stopping the run.
@@ -432,6 +441,36 @@ def _disable_xdist(config: pytest.Config) -> None:
     config.option.tx = []
 
 
+def _covering(
+    config: pytest.Config,
+    repository: storage.Repository,
+    state: State,
+    base: dict[str, Any],
+    selector: selection.Selector,
+) -> set[str]:
+    """Return the recorded tests that ran lines changed since the patch base, HEAD's
+    merge base with a ref such as a pull request's target, so coverage sees every
+    line changed since, and note those changes for the report."""
+    ref = config.option.blast_radius_patch_base
+    if ref is None:
+        return set()
+    try:
+        commit = repository.git("merge-base", ref, "HEAD").strip()
+        branch = repository.git("rev-parse", f"{commit}^{{tree}}").strip()
+    except storage.GitError as error:
+        msg = f"--blast-radius-patch-base {ref}: {error}"
+        raise pytest.UsageError(msg) from error
+    # Lines changed before the recording differ between it and the base, so the
+    # tests that ran them are those a change back to the base would affect.
+    reverse = _changes(repository, base["tree"], branch)
+    covering, other = _select(
+        config, repository, base, reverse, lambda path: repository.source(branch, path)
+    )
+    selector.collect |= other.collect
+    state.patch_changes = _changes(repository, branch, state.tree)
+    return covering
+
+
 def _changes(
     repository: storage.Repository, base: str, tree: str
 ) -> dict[str, list[selection.Hunk] | None]:
@@ -447,6 +486,7 @@ def _select(
     repository: storage.Repository,
     data: dict[str, Any],
     changes: dict[str, list[selection.Hunk] | None],
+    new_source: selection.Source | None = None,
 ) -> tuple[set[str], selection.Selector]:
     also_run = []
     for line in config.getini("blast_radius_also_run"):
@@ -467,7 +507,7 @@ def _select(
     affected = selector.select(
         changes,
         lambda path: repository.source(data["tree"], path),
-        lambda path: _read(repository.root / path),
+        new_source or (lambda path: _read(repository.root / path)),
     )
     return affected, selector
 
@@ -896,7 +936,8 @@ def pytest_terminal_summary(
         None,
     )
     if state.patch and cov is not None and state.repository is not None:
-        lines += patch.report(cov, state.repository.root, state.changes)
+        changes = state.changes if state.patch_changes is None else state.patch_changes
+        lines += patch.report(cov, state.repository.root, changes)
     # The header already says what blast-radius selects.
     shown = lines if state.mode == "check" else lines[1:]
     if shown:
