@@ -156,6 +156,7 @@ class Recorder:
             [], tuple[dict[str, list[str]], list[str]]
         ] = lambda: ({}, [])
         self.settings_file: Callable[[], str | None] = lambda: None
+        self.forget_cached_settings: Callable[[], None] = lambda: None
         self.test_path = ""
 
     def start(self) -> None:
@@ -216,6 +217,7 @@ class Recorder:
         self.covered = django_hooks.covered()
         self.template_libraries = django_hooks.template_libraries
         self.settings_file = django_hooks.settings_file
+        self.forget_cached_settings = django_hooks.forget_cached_settings
 
     def project_classes(self, cls: object) -> list[FunctionKey]:
         """Return the keys of a class and the project classes it inherits from."""
@@ -466,6 +468,7 @@ class Recorder:
 
     def start_test(self, nodeid: str, path: str) -> None:
         """Start crediting a test."""
+        self.forget_cached_settings()
         self.watch_caches()
         self.cache_stack.clear()
         self.storing.clear()

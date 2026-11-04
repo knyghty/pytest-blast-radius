@@ -168,14 +168,21 @@ def _settings_patches(
     def getattr_wrapper(self: LazySettings, name: str) -> object:
         # A read of a missing setting counts too: adding it changes the result.
         use_module(file, f"setting:{name}")
-        value = get(self, name)
-        # A cached setting skips __getattr__, so later reads would go unseen. Django
-        # adds the script prefix to these as it caches them, so they stay.
-        if name not in {"MEDIA_URL", "STATIC_URL"}:
-            self.__dict__.pop(name, None)
-        return value
+        return get(self, name)
 
     return [(LazySettings, "__getattr__", getattr_wrapper)]
+
+
+def forget_cached_settings() -> None:
+    """Drop the settings Django cached on reading, so a test's first read of each
+    goes through ``__getattr__`` and is credited.
+
+    Reads leave the cache in place: pytest's monkeypatch restores a patched setting
+    from it, and with the entry gone deletes the setting instead.
+    """
+    cached = vars(settings)
+    for name in [name for name in cached if name != "_wrapped"]:
+        del cached[name]
 
 
 def _render_wrap(

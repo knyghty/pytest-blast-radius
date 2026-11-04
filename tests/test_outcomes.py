@@ -184,3 +184,27 @@ def test_django(project: Project) -> None:
             """,
         },
     )
+
+
+def test_monkeypatched_setting(project: Project) -> None:
+    same(
+        project,
+        {
+            "site_/__init__.py": "",
+            "site_/settings.py": SETTINGS + "PAGE = 1\n",
+            "app/__init__.py": "",
+            "app/urls.py": "urlpatterns = []\n",
+            "tests/__init__.py": "",
+            "tests/conftest.py": DJANGO_CONFTEST,
+            "tests/test_a.py": """\
+                from django.conf import settings
+
+                def test_patched(monkeypatch):
+                    monkeypatch.setattr("django.conf.settings.PAGE", 2)
+                    assert settings.PAGE == 2
+
+                def test_restored():
+                    assert settings.PAGE == 1
+            """,
+        },
+    )
